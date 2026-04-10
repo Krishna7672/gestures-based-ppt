@@ -19,7 +19,7 @@ body {
     box-shadow: 0 0 20px rgba(0, 240, 255, 0.15);
 }
 
-/* PPT Slide Transition & Containment Logic */
+/* PPT & PDF Slide Transition & Containment Logic */
 .slide { 
     opacity: 0; 
     transform: scale(0.95); 
@@ -34,6 +34,15 @@ body {
 
 button, label.cursor-pointer { transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s ease; }
 button:active, label.cursor-pointer:active { transform: scale(0.95); }
+
+/* Custom Setting Animations */
+.anim-swipe { animation: icon-swipe 2s ease-in-out infinite; display: inline-block; }
+.anim-pinch { animation: icon-pinch 2s ease-in-out infinite; display: inline-block; }
+.anim-pulse { animation: icon-pulse 2s ease-in-out infinite; display: inline-block; }
+
+@keyframes icon-swipe { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+@keyframes icon-pinch { 0%, 100% { transform: scale(1); } 50% { transform: scale(0.85); } }
+@keyframes icon-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: 0.8; } }
 
 /* True Fullscreen Tweaks (Hides Dashboard elements when presenting) */
 body.is-fullscreen nav, 
