@@ -15,6 +15,9 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+
     <link rel="stylesheet" href="style.css">
 
     <script id="tailwind-config">
@@ -94,8 +97,8 @@
             </div>
             
             <label class="cursor-pointer text-[#e4e1e9] bg-white/10 hover:bg-white/20 px-4 py-2 rounded-full border border-white/20 transition-all flex items-center gap-2">
-                <span class="material-symbols-outlined text-sm">upload_file</span> Load PPT
-                <input type="file" id="slide-upload" accept="image/png, image/jpeg" multiple class="hidden" />
+                <span class="material-symbols-outlined text-sm">upload_file</span> Load PDF/Images
+                <input type="file" id="slide-upload" accept="application/pdf, image/png, image/jpeg" multiple class="hidden" />
             </label>
             <button id="fullscreen-btn" class="text-[#e4e1e9] bg-white/10 hover:bg-white/20 px-4 py-2 rounded-full border border-white/20 transition-all flex items-center gap-2">
                 <span class="material-symbols-outlined text-sm">fullscreen</span> Fullscreen
@@ -152,7 +155,7 @@
                             <h1 class="font-headline text-5xl font-extrabold tracking-tight text-white mb-2">
                                 Presentation Engine Ready
                             </h1>
-                            <p class="font-body text-white/60">Click "Load PPT" in the top bar to upload exported slide images.</p>
+                            <p class="font-body text-white/60">Click "Load PDF/Images" in the top bar to upload your slides.</p>
                         </div>
                     </div>
                 </div>
