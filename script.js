@@ -10,10 +10,13 @@ let slides = document.querySelectorAll('.slide');
 const slideContainer = document.getElementById('slide-container');
 const slideCounter = document.getElementById('slide-counter');
 
-// New Dashboard UI Elements
+// UI & Telemetry Elements
 const activeGestureText = document.getElementById('active-gesture-text');
 const activeGestureIcon = document.getElementById('active-gesture-icon');
 const feedbackWidget = document.getElementById('feedback-widget');
+const confidenceText = document.getElementById('confidence-text');
+const confidenceBar = document.getElementById('confidence-bar');
+const fpsText = document.getElementById('fps-text');
 
 const startBtn = document.getElementById('start-btn');
 const initOverlay = document.getElementById('init-overlay');
@@ -33,7 +36,6 @@ const saveSettingsBtn = document.getElementById('save-settings-btn');
 // --- Global State ---
 let currentSlide = 0;
 let isCooldown = false;
-let currentScale = 1; 
 let isSystemPaused = false; 
 const COOLDOWN_TIME = 800; // ⏳ DEBOUNCE DELAY
 const synth = window.speechSynthesis;
@@ -169,12 +171,27 @@ function showFeedback(text, iconName) {
     }
 }
 
-// Global window function so HTML buttons can trigger it too
-window.triggerGesture = function(physicalGestureName) {
-    const actionKey = userConfig[physicalGestureName] || physicalGestureName; // Allows direct mapping or action passing
+// Function for the on-screen physical buttons
+window.triggerManualAction = function(actionKey) {
+    if (actionKey === 'none') return;
+    if (isSystemPaused && actionKey !== 'togglePause') return; 
+
+    executeAction[actionKey]();
+    const actionData = availableActions[actionKey];
+    if(actionData) {
+        showFeedback("Manual Override", "touch_app");
+        if(actionKey !== 'togglePause') speak(actionData.text);
+    }
+    
+    setTimeout(() => { showFeedback("Standby", "waving_hand"); }, 1000);
+};
+
+// AI Gesture Trigger
+function triggerGesture(physicalGestureName) {
+    const actionKey = userConfig[physicalGestureName];
     if (actionKey === 'none') return; 
 
-    if (isSystemPaused && actionKey !== 'togglePause') return; // Strict pause lock
+    if (isSystemPaused && actionKey !== 'togglePause') return; 
 
     isCooldown = true; 
     executeAction[actionKey]();
@@ -266,9 +283,13 @@ if(document.getElementById('fullscreen-btn')) {
     });
 }
 
-// --- Custom Camera Router ---
+// --- Custom Camera Router & FPS Counter ---
 let activeStream = null;
 let isProcessingFrame = false; 
+
+// FPS Calculation Variables
+let lastFrameTime = performance.now();
+let frameCount = 0;
 
 async function populateCameras() {
     try {
@@ -307,6 +328,16 @@ async function startCustomCamera(deviceId = null) {
 
 async function processVideoFrame() {
     if (videoElement.readyState >= 2 && !isProcessingFrame) {
+        
+        // Calculate FPS for Telemetry panel
+        const now = performance.now();
+        frameCount++;
+        if (now - lastFrameTime >= 1000) {
+            if(fpsText) fpsText.innerText = `FPS: ${frameCount} | Engine V2`;
+            frameCount = 0;
+            lastFrameTime = now;
+        }
+
         isProcessingFrame = true;
         await hands.send({ image: videoElement });
         isProcessingFrame = false;
@@ -356,8 +387,14 @@ hands.onResults((results) => {
 
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         
+        // --- ✅ UPDATE LIVE TELEMETRY CONFIDENCE ---
+        const confidenceScore = results.multiHandedness[0].score;
+        const confidencePercent = Math.round(confidenceScore * 100);
+        if(confidenceText) confidenceText.innerText = `> ${confidencePercent}%`;
+        if(confidenceBar) confidenceBar.style.width = `${confidencePercent}%`;
+
         // ✅ 0.8 CONFIDENCE THRESHOLD CHECK
-        if (results.multiHandedness && results.multiHandedness[0].score < 0.8) {
+        if (confidenceScore < 0.8) {
             canvasCtx.restore();
             return; 
         }
@@ -374,11 +411,15 @@ hands.onResults((results) => {
                 triggerGesture(staticPosture);
             } 
         }
+    } else {
+        // Reset Confidence UI if no hand
+        if(confidenceText) confidenceText.innerText = `0%`;
+        if(confidenceBar) confidenceBar.style.width = `0%`;
     }
     canvasCtx.restore();
 });
 
-// --- Initialization ---
+// --- Initialization & Setup ---
 if(startBtn) {
     startBtn.addEventListener('click', async () => {
         if(initOverlay && typeof gsap !== 'undefined') {
