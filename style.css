@@ -1,0 +1,39 @@
+body { font-family: 'Inter', sans-serif; overflow: hidden; background-color: #0e0e0f; color: #ffffff; }
+.material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24; }
+.glass-panel { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(25px); -webkit-backdrop-filter: blur(25px); border: 1px solid rgba(255, 255, 255, 0.1); }
+.face-id-gradient { background: conic-gradient(from 0deg, #00f0ff, #72b5ff, #00f0ff); mask: radial-gradient(circle, transparent 65%, black 66%); -webkit-mask: radial-gradient(circle, transparent 65%, black 66%); }
+.slide-shadow { box-shadow: 0 40px 100px -20px rgba(0, 0, 0, 0.5); }
+.nav-item-active { position: relative; }
+.nav-item-active::after { content: ''; position: absolute; right: 0; top: 25%; height: 50%; width: 3px; background: #00f0ff; border-radius: 4px 0 0 4px; }
+.glyph-container svg { filter: drop-shadow(0 0 12px rgba(0, 240, 255, 0.5)); }
+
+/* Fixes for PPT Images properly containing inside the 16:9 box */
+.slide { 
+    opacity: 0; 
+    transform: scale(0.95); 
+    pointer-events: none; 
+    position: absolute; 
+    inset: 0; 
+    width: 100%; 
+    height: 100%; 
+}
+.slide.active-slide { opacity: 1; transform: scale(1); pointer-events: auto; z-index: 10; }
+.slide img { width: 100%; height: 100%; object-fit: contain; border-radius: 2.5rem; padding: 1rem;}
+
+button, label.cursor-pointer { transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s ease; }
+button:active, label.cursor-pointer:active { transform: scale(0.95); }
+
+/* Custom Setting Animations */
+.anim-swipe { animation: icon-swipe 2s ease-in-out infinite; display: inline-block; }
+.anim-pinch { animation: icon-pinch 2s ease-in-out infinite; display: inline-block; }
+.anim-pulse { animation: icon-pulse 2s ease-in-out infinite; display: inline-block; }
+
+@keyframes icon-swipe { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+@keyframes icon-pinch { 0%, 100% { transform: scale(1); } 50% { transform: scale(0.85); } }
+@keyframes icon-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: 0.8; } }
+
+/* True Fullscreen Tweaks */
+body.is-fullscreen header, body.is-fullscreen nav, body.is-fullscreen .hide-in-fullscreen { display: none !important; }
+body.is-fullscreen main { margin: 0 !important; padding: 0 !important; height: 100vh !important; width: 100vw !important; }
+body.is-fullscreen #slide-container { border-radius: 0 !important; border: none !important; height: 100% !important; max-width: none !important; }
+body.is-fullscreen .slide img { border-radius: 0 !important; padding: 0 !important; }
