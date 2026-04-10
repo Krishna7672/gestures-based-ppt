@@ -6,7 +6,7 @@ let slides = document.querySelectorAll('.slide');
 const slideContainer = document.getElementById('slide-container');
 const slideCounter = document.getElementById('slide-counter');
 
-// UI & Modal Elements
+// UI Elements
 const feedbackAlert = document.getElementById('feedback-alert');
 const feedbackIcon = document.getElementById('feedback-icon');
 const feedbackText = document.getElementById('feedback-text');
@@ -16,6 +16,7 @@ const slideUpload = document.getElementById('slide-upload');
 const instructionList = document.getElementById('instruction-list');
 const cameraSelect = document.getElementById('camera-select');
 const voiceIndicator = document.getElementById('voice-indicator');
+const pauseOverlay = document.getElementById('pause-overlay');
 
 // Settings Elements
 const settingsModal = document.getElementById('settings-modal');
@@ -28,42 +29,39 @@ const saveSettingsBtn = document.getElementById('save-settings-btn');
 let currentSlide = 0;
 let isCooldown = false;
 let currentScale = 1; 
-const COOLDOWN_TIME = 600; // ⚡ REDUCED: Much faster sequential gestures
+let isSystemPaused = false; // New Pause State
+const COOLDOWN_TIME = 800; // Perfect debounce delay to prevent double-clicks
 const synth = window.speechSynthesis;
-
-// Smoothing Variables
-let smoothedPinchRatio = null;
 let xHistory = []; 
 
 // --- Configurable Gesture System ---
 const availableActions = {
     'nextSlide': { label: 'Next Slide', icon: 'keyboard_double_arrow_right', text: 'Forward' },
     'prevSlide': { label: 'Previous Slide', icon: 'keyboard_double_arrow_left', text: 'Previous' },
-    'zoomIn': { label: 'Zoom In', icon: 'zoom_in', text: 'Zoom In' },
-    'zoomOut': { label: 'Zoom Out', icon: 'zoom_out', text: 'Zoom Out' },
+    'togglePause': { label: 'Pause/Play', icon: 'pause_circle', text: 'Paused' },
     'none': { label: 'Do Nothing', icon: 'block', text: 'Ignored' }
 };
 
+// USER REQUESTED DEFAULTS: Thumb Up -> Next, Fist -> Prev, Palm -> Pause
 let userConfig = {
-    'swipeRight': 'nextSlide',
-    'swipeLeft': 'prevSlide',
-    'lShape': 'zoomIn',
-    'pinch': 'zoomOut',
-    'openPalm': 'none',
-    'closedFist': 'none'
+    'thumbUp': 'nextSlide',
+    'closedFist': 'prevSlide',
+    'openPalm': 'togglePause',
+    'swipeRight': 'none',
+    'swipeLeft': 'none'
 };
 
 const dropdowns = {
-    'swipeRight': document.getElementById('map-swipe-right'),
-    'swipeLeft': document.getElementById('map-swipe-left'),
-    'lShape': document.getElementById('map-l-shape'),
-    'pinch': document.getElementById('map-pinch'),
+    'thumbUp': document.getElementById('map-thumb-up'),
+    'closedFist': document.getElementById('map-closed-fist'),
     'openPalm': document.getElementById('map-open-palm'),
-    'closedFist': document.getElementById('map-closed-fist')
+    'swipeRight': document.getElementById('map-swipe-right'),
+    'swipeLeft': document.getElementById('map-swipe-left')
 };
 
 function initSettings() {
     for (const [gestureKey, selectEl] of Object.entries(dropdowns)) {
+        if(!selectEl) continue;
         selectEl.innerHTML = '';
         for (const [actionKey, actionData] of Object.entries(availableActions)) {
             const option = document.createElement('option');
@@ -78,40 +76,33 @@ function initSettings() {
 
 function updateInstructionsUI() {
     instructionList.innerHTML = `
+        <div class="flex justify-between items-center group"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-[10px] anim-pulse">thumb_up</span><span>Thumb Up:</span></div> <span class="text-primary">${availableActions[userConfig.thumbUp].label}</span></div>
+        <div class="flex justify-between items-center group"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-[10px] anim-pinch">do_not_touch</span><span>Fist:</span></div> <span class="text-primary">${availableActions[userConfig.closedFist].label}</span></div>
+        <div class="flex justify-between items-center group"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-[10px] anim-pulse">front_hand</span><span>Palm:</span></div> <span class="text-primary">${availableActions[userConfig.openPalm].label}</span></div>
         <div class="flex justify-between items-center group"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-[10px] anim-swipe">swipe_right</span><span>Swipe R:</span></div> <span class="text-primary">${availableActions[userConfig.swipeRight].label}</span></div>
         <div class="flex justify-between items-center group"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-[10px] anim-swipe" style="animation-direction: reverse;">swipe_left</span><span>Swipe L:</span></div> <span class="text-primary">${availableActions[userConfig.swipeLeft].label}</span></div>
-        <div class="flex justify-between items-center group"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-[10px] anim-pulse">pan_zoom</span><span>L-Shape:</span></div> <span class="text-primary">${availableActions[userConfig.lShape].label}</span></div>
-        <div class="flex justify-between items-center group"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-[10px] anim-pinch">pinch</span><span>Pinch:</span></div> <span class="text-primary">${availableActions[userConfig.pinch].label}</span></div>
-        <div class="flex justify-between items-center group"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-[10px] anim-pulse">front_hand</span><span>Palm:</span></div> <span class="text-primary">${availableActions[userConfig.openPalm].label}</span></div>
-        <div class="flex justify-between items-center group"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-[10px] anim-pinch">do_not_touch</span><span>Fist:</span></div> <span class="text-primary">${availableActions[userConfig.closedFist].label}</span></div>
     `;
 }
 
 // Settings Bindings
 openSettingsBtn.addEventListener('click', () => {
     settingsModal.classList.remove('hidden');
-    setTimeout(() => {
-        settingsModal.classList.remove('opacity-0');
-        settingsCard.classList.remove('scale-95');
-    }, 10);
+    setTimeout(() => { settingsModal.classList.remove('opacity-0'); settingsCard.classList.remove('scale-95'); }, 10);
 });
 
-function closeSettings() {
-    settingsModal.classList.add('opacity-0');
-    settingsCard.classList.add('scale-95');
+closeSettingsBtn.addEventListener('click', () => {
+    settingsModal.classList.add('opacity-0'); settingsCard.classList.add('scale-95');
     setTimeout(() => settingsModal.classList.add('hidden'), 300);
-}
+});
 
-closeSettingsBtn.addEventListener('click', closeSettings);
 saveSettingsBtn.addEventListener('click', () => {
+    userConfig.thumbUp = dropdowns.thumbUp.value;
+    userConfig.closedFist = dropdowns.closedFist.value;
+    userConfig.openPalm = dropdowns.openPalm.value;
     userConfig.swipeRight = dropdowns.swipeRight.value;
     userConfig.swipeLeft = dropdowns.swipeLeft.value;
-    userConfig.lShape = dropdowns.lShape.value;
-    userConfig.pinch = dropdowns.pinch.value;
-    userConfig.openPalm = dropdowns.openPalm.value;
-    userConfig.closedFist = dropdowns.closedFist.value;
     updateInstructionsUI();
-    closeSettings();
+    closeSettingsBtn.click();
     showFeedback("Config Saved", "settings_saved");
 });
 
@@ -122,19 +113,27 @@ initSettings();
 function speak(text) {
     if (synth.speaking) synth.cancel();
     const utterThis = new SpeechSynthesisUtterance(text);
-    utterThis.rate = 1.1; // Slightly faster, robotic speech
+    utterThis.rate = 1.1;
     synth.speak(utterThis);
 }
 
 const executeAction = {
     'nextSlide': () => {
-        if (currentSlide < slides.length - 1) { currentSlide++; currentScale = 1; updateSlideUI(); }
+        if (currentSlide < slides.length - 1) { currentSlide++; updateSlideUI(); }
     },
     'prevSlide': () => {
-        if (currentSlide > 0) { currentSlide--; currentScale = 1; updateSlideUI(); }
+        if (currentSlide > 0) { currentSlide--; updateSlideUI(); }
     },
-    'zoomIn': () => { if(currentScale === 1) applyZoom(1.5); },
-    'zoomOut': () => { if(currentScale > 1) applyZoom(1); },
+    'togglePause': () => {
+        isSystemPaused = !isSystemPaused;
+        if(isSystemPaused) {
+            pauseOverlay.classList.remove('opacity-0', 'pointer-events-none');
+            speak("System Paused");
+        } else {
+            pauseOverlay.classList.add('opacity-0', 'pointer-events-none');
+            speak("System Resumed");
+        }
+    },
     'none': () => {}
 };
 
@@ -142,26 +141,26 @@ function triggerGesture(physicalGestureName) {
     const actionKey = userConfig[physicalGestureName];
     if (actionKey === 'none') return; 
 
+    // STRICT CHECK: If paused, the ONLY action allowed is unpausing.
+    if (isSystemPaused && actionKey !== 'togglePause') {
+        return; // Ignore all other gestures while paused
+    }
+
+    // 1. EXECUTE DEBOUNCE / GESTURE DELAY
+    isCooldown = true; 
+    
+    // 2. TRIGGER ACTION
     executeAction[actionKey]();
+    
+    // 3. UI FEEDBACK
     const actionData = availableActions[actionKey];
     showFeedback(actionData.text, actionData.icon);
-    speak(actionData.label);
+    if(actionKey !== 'togglePause') speak(actionData.label);
 
-    isCooldown = true; xHistory = []; smoothedPinchRatio = null; 
+    // 4. RESET COOLDOWN
+    xHistory = []; 
     setTimeout(() => { isCooldown = false; }, COOLDOWN_TIME);
 }
-
-function triggerVoice(actionKey) {
-    if (actionKey === 'none') return;
-    executeAction[actionKey]();
-    const actionData = availableActions[actionKey];
-    showFeedback("Voice: " + actionData.text, "mic");
-    speak(actionData.label);
-    
-    isCooldown = true;
-    setTimeout(() => { isCooldown = false; }, COOLDOWN_TIME);
-}
-
 
 // --- Voice Recognition Setup ---
 function initVoiceCommands() {
@@ -176,30 +175,23 @@ function initVoiceCommands() {
     recognition.continuous = true;
     recognition.interimResults = false;
     
-    recognition.onstart = () => {
-        if(voiceIndicator) voiceIndicator.classList.remove('hidden');
-    };
+    recognition.onstart = () => { if(voiceIndicator) voiceIndicator.classList.remove('hidden'); };
 
     recognition.onresult = (event) => {
         const command = event.results[event.results.length - 1][0].transcript.toLowerCase();
-        console.log("🗣️ Voice Heard:", command);
-        if ((command.includes('next') || command.includes('forward')) && !isCooldown) triggerVoice('nextSlide');
-        else if ((command.includes('previous') || command.includes('back')) && !isCooldown) triggerVoice('prevSlide');
+        if ((command.includes('next') || command.includes('forward')) && !isCooldown && !isSystemPaused) triggerGesture('thumbUp'); // Maps voice to gesture logic
+        else if ((command.includes('previous') || command.includes('back')) && !isCooldown && !isSystemPaused) triggerGesture('closedFist');
+        else if (command.includes('pause') && !isCooldown) triggerGesture('openPalm');
     };
 
     recognition.onerror = (event) => {
-        console.error("🎤 Microphone Error:", event.error);
         if (event.error === 'not-allowed') {
             showFeedback("Mic Access Denied", "mic_off");
             if(voiceIndicator) voiceIndicator.classList.add('hidden');
         }
     };
     
-    // Auto-restart if it drops out
-    recognition.onend = () => { 
-        try { recognition.start(); } catch(e){} 
-    }; 
-    
+    recognition.onend = () => { try { recognition.start(); } catch(e){} }; 
     try { recognition.start(); } catch(e) {}
 }
 
@@ -221,7 +213,7 @@ slideUpload.addEventListener('change', (e) => {
             
             if (index === files.length - 1) {
                 slides = document.querySelectorAll('.slide');
-                currentSlide = 0; currentScale = 1; updateSlideUI();
+                currentSlide = 0; updateSlideUI();
                 showFeedback("Slides Loaded", "task_alt");
                 speak("Ready.");
             }
@@ -230,12 +222,11 @@ slideUpload.addEventListener('change', (e) => {
     });
 });
 
-// ⚡ FASTER UI TRANSITIONS (Reduced duration from 0.6 to 0.4s)
 function updateSlideUI() {
     slides.forEach((slide, index) => {
         if (index === currentSlide) {
             slide.classList.add('active-slide'); slide.style.zIndex = '10';
-            gsap.to(slide, { opacity: 1, scale: currentScale, duration: 0.4, ease: "power3.out" });
+            gsap.to(slide, { opacity: 1, scale: 1, duration: 0.4, ease: "power3.out" });
         } else {
             slide.classList.remove('active-slide'); slide.style.zIndex = '0';
             gsap.to(slide, { opacity: 0, scale: 0.95, duration: 0.4, ease: "power3.out" });
@@ -252,17 +243,10 @@ function showFeedback(text, iconName) {
     setTimeout(() => {
         feedbackAlert.classList.add('opacity-0', 'translate-y-4');
         feedbackAlert.classList.remove('opacity-100', 'translate-y-0');
-    }, 1500); // Dissolves faster
+    }, 1500); 
 }
 
-function applyZoom(scaleFactor) {
-    currentScale = scaleFactor;
-    if (slides[currentSlide]) {
-        gsap.to(slides[currentSlide], { scale: currentScale, duration: 0.4, ease: "power3.out" });
-    }
-}
-
-// --- True Fullscreen Logic ---
+// Fullscreen
 document.addEventListener('fullscreenchange', () => {
     if (document.fullscreenElement) document.body.classList.add('is-fullscreen');
     else document.body.classList.remove('is-fullscreen');
@@ -277,7 +261,7 @@ document.getElementById('fullscreen-btn').addEventListener('click', () => {
 // --- Custom Native Camera Router ---
 let activeStream = null;
 let animationFrameId = null;
-let isProcessingFrame = false; // ⚡ CPU lock to prevent bottlenecking
+let isProcessingFrame = false; 
 
 async function populateCameras() {
     try {
@@ -329,82 +313,112 @@ async function processVideoFrame() {
 }
 
 
-// --- ⚡ LIGHTNING FAST PROPORTIONAL GESTURE ENGINE ---
+// --- 🧠 STATIC GESTURE RECOGNITION ENGINE ---
 function getPalmSize(landmarks) {
     return Math.hypot(landmarks[9].x - landmarks[0].x, landmarks[9].y - landmarks[0].y);
 }
 
-function detectHandState(landmarks) {
+function detectStaticHandPosture(landmarks, palmSize) {
     const wrist = landmarks[0];
+    
+    // Arrays representing the tips and base joints of the Index, Middle, Ring, and Pinky fingers
     const tips = [landmarks[8], landmarks[12], landmarks[16], landmarks[20]];
     const mcps = [landmarks[5], landmarks[9], landmarks[13], landmarks[17]];
     
-    let curledCount = 0; let openCount = 0;
+    let curledCount = 0; 
+    let openCount = 0;
     
+    // Check state of the 4 main fingers
     for (let i = 0; i < 4; i++) {
         const tipDist = Math.hypot(tips[i].x - wrist.x, tips[i].y - wrist.y);
         const mcpDist = Math.hypot(mcps[i].x - wrist.x, mcps[i].y - wrist.y);
-        if (tipDist < mcpDist * 1.2) curledCount++; 
+        if (tipDist < mcpDist * 1.3) curledCount++; 
         if (tipDist > mcpDist * 1.5) openCount++; 
     }
     
-    if (curledCount >= 3) return 'closedFist';
-    if (openCount >= 4) return 'openPalm';
+    // Thumb specifics
+    const thumbTip = landmarks[4];
+    const thumbMcp = landmarks[2];
+    const indexMcp = landmarks[5];
+    
+    // Is thumb extended far from wrist?
+    const isThumbExtended = Math.hypot(thumbTip.x - wrist.x, thumbTip.y - wrist.y) > (palmSize * 1.2);
+    
+    // Is thumb pointing UP? (In camera coordinates, lower Y value means higher on screen)
+    const isThumbPointingUp = thumbTip.y < thumbMcp.y && thumbTip.y < indexMcp.y;
+
+    // --- GESTURE LOGIC ---
+    // 1. THUMB UP 👍: 3 or 4 fingers curled + Thumb extended and pointing up
+    if (curledCount >= 3 && isThumbExtended && isThumbPointingUp) {
+        return 'thumbUp';
+    }
+    
+    // 2. FIST 👊: 4 fingers curled, thumb not significantly pointing up
+    if (curledCount >= 4) {
+        return 'closedFist';
+    }
+    
+    // 3. OPEN PALM ✋: All fingers extended
+    if (openCount >= 4 && isThumbExtended) {
+        return 'openPalm';
+    }
+    
     return 'none';
 }
 
 const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-// Lowered complexity and tracking for sheer speed and distance capability
-hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.4 });
+// Optimized confidence for static gestures
+hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.5 });
 
 hands.onResults((results) => {
     canvasCtx.save();
     canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        
+        // --- 🛡️ CONFIDENCE THRESHOLD CHECK ---
+        // Only accept gestures if the AI is > 80% confident it sees a real hand
+        if (results.multiHandedness && results.multiHandedness[0].score < 0.8) {
+            canvasCtx.restore();
+            return; // Exit early, ignore low confidence frames
+        }
+
         const landmarks = results.multiHandLandmarks[0];
+        
+        // Draw Skeleton
         drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00eefc', lineWidth: 2});
         drawLandmarks(canvasCtx, landmarks, {color: '#ffffff', lineWidth: 1, radius: 2});
 
         const palmSize = getPalmSize(landmarks);
-        const thumbTip = landmarks[4];
         const indexTip = landmarks[8];
-        
-        // Pinch Logic (⚡ Speed Tuned EMA: 60% new data, 40% history - highly reactive)
-        const rawPinchDist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
-        const pinchRatio = rawPinchDist / palmSize; 
-        smoothedPinchRatio = smoothedPinchRatio === null ? pinchRatio : (smoothedPinchRatio * 0.4 + pinchRatio * 0.6);
 
         if (!isCooldown) {
-            if (smoothedPinchRatio > 2.2 && currentScale === 1) triggerGesture('lShape');
-            else if (smoothedPinchRatio < 0.6 && currentScale > 1) triggerGesture('pinch');
-            else {
-                const handState = detectHandState(landmarks);
-                if (handState === 'closedFist') triggerGesture('closedFist');
-                else if (handState === 'openPalm') triggerGesture('openPalm');
-            }
-        }
-
-        // Swipe Logic (⚡ Snappier memory window - 250ms instead of 350ms)
-        if (!isCooldown && currentScale === 1) {
-            const now = performance.now();
-            xHistory.push({ x: indexTip.x, y: indexTip.y, t: now });
-            xHistory = xHistory.filter(h => now - h.t < 250); // Reacts to shorter "flicks"
+            // Check for Thumb Up, Palm, or Fist
+            const staticPosture = detectStaticHandPosture(landmarks, palmSize);
             
-            if (xHistory.length > 3) {
-                const oldest = xHistory[0]; const newest = xHistory[xHistory.length - 1];
-                const dx = newest.x - oldest.x; const dt = newest.t - oldest.t; 
+            if (staticPosture !== 'none') {
+                triggerGesture(staticPosture);
+            } 
+            // Fallback Swipe Logic (Only runs if no static gesture is detected)
+            else {
+                const now = performance.now();
+                xHistory.push({ x: indexTip.x, y: indexTip.y, t: now });
+                xHistory = xHistory.filter(h => now - h.t < 250); 
                 
-                if (dt > 50) { // Require a tiny gap to calculate valid velocity
-                    const velocity = dx / dt;
-                    // Lowered velocity threshold slightly to make swiping easier
-                    if (velocity < -0.00030) triggerGesture('swipeRight');
-                    else if (velocity > 0.00030) triggerGesture('swipeLeft');
+                if (xHistory.length > 3) {
+                    const oldest = xHistory[0]; const newest = xHistory[xHistory.length - 1];
+                    const dx = newest.x - oldest.x; const dt = newest.t - oldest.t; 
+                    
+                    if (dt > 50) { 
+                        const velocity = dx / dt;
+                        if (velocity < -0.00030) triggerGesture('swipeRight');
+                        else if (velocity > 0.00030) triggerGesture('swipeLeft');
+                    }
                 }
             }
         }
     } else {
-        xHistory = []; smoothedPinchRatio = null;
+        xHistory = []; 
     }
     canvasCtx.restore();
 });
