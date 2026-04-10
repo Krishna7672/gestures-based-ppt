@@ -244,45 +244,61 @@ function initVoiceCommands() {
     try { recognition.start(); } catch(e) {}
 }
 
-
 // --- 📄 DYNAMIC PDF & IMAGE UPLOAD LOGIC ---
 if(slideUpload) {
     slideUpload.addEventListener('change', async (e) => {
         const files = Array.from(e.target.files);
         if(files.length === 0) return;
         
+        // Clear old slides
         document.querySelectorAll('.slide').forEach(s => s.remove());
-        showFeedback("Processing...", "sync");
-        speak("Processing file.");
-
-        // Handing PDF Files
-        if (files[0].type === 'application/pdf') {
+        showFeedback("Reading File...", "sync");
+        
+        // --- PDF HANDLING ---
+        if (files[0].type === 'application/pdf' || files[0].name.toLowerCase().endsWith('.pdf')) {
             const fileReader = new FileReader();
             fileReader.onload = async function(event) {
-                const typedarray = new Uint8Array(event.target.result);
-                const pdf = await pdfjsLib.getDocument(typedarray).promise;
-                
-                for (let i = 1; i <= pdf.numPages; i++) {
-                    const page = await pdf.getPage(i);
-                    const viewport = page.getViewport({ scale: 2.0 }); // High res scaling
+                try {
+                    const typedarray = new Uint8Array(event.target.result);
+                    const loadingTask = pdfjsLib.getDocument({data: typedarray});
+                    const pdf = await loadingTask.promise;
                     
-                    const canvas = document.createElement('canvas');
-                    const context = canvas.getContext('2d');
-                    canvas.height = viewport.height;
-                    canvas.width = viewport.width;
+                    let loadedCount = 0;
+                    speak(`Loading ${pdf.numPages} slides.`);
                     
-                    await page.render({ canvasContext: context, viewport: viewport }).promise;
-                    
-                    const slideDiv = document.createElement('div');
-                    slideDiv.className = `slide absolute inset-0 w-full h-full flex flex-col items-center justify-center bg-transparent ${i === 1 ? 'active-slide' : ''}`;
-                    slideDiv.innerHTML = `<img src="${canvas.toDataURL('image/jpeg', 0.8)}" />`;
-                    slideContainer.appendChild(slideDiv);
+                    for (let i = 1; i <= pdf.numPages; i++) {
+                        const page = await pdf.getPage(i);
+                        const viewport = page.getViewport({ scale: 1.5 }); // Scaled to prevent memory crash
+                        
+                        const canvas = document.createElement('canvas');
+                        const context = canvas.getContext('2d');
+                        canvas.height = viewport.height;
+                        canvas.width = viewport.width;
+                        
+                        await page.render({ canvasContext: context, viewport: viewport }).promise;
+                        
+                        const slideDiv = document.createElement('div');
+                        slideDiv.className = `slide absolute inset-0 w-full h-full flex flex-col items-center justify-center bg-transparent ${i === 1 ? 'active-slide' : ''}`;
+                        slideDiv.innerHTML = `<img src="${canvas.toDataURL('image/jpeg', 0.8)}" style="width: 100%; height: 100%; object-fit: contain; padding: 2rem;" />`;
+                        
+                        if(i === 1) {
+                            slideDiv.style.opacity = '1'; slideDiv.style.transform = 'scale(1)'; slideDiv.style.zIndex = '10';
+                        }
+                        
+                        slideContainer.appendChild(slideDiv);
+                        loadedCount++;
+                        showFeedback(`Loaded ${loadedCount} / ${pdf.numPages}`, "sync");
+                    }
+                    finishLoading();
+                } catch (error) {
+                    console.error("PDF Parsing Error: ", error);
+                    showFeedback("PDF Error", "error");
+                    alert("Could not load the PDF.");
                 }
-                finishLoading();
             };
-            fileReader.readAsArrayBuffer(files[0]);
+            fileReader.readAsArrayBuffer(files[0]); // PDF.js Requires ArrayBuffer
         } 
-        // Handling Image Files
+        // --- IMAGE HANDLING ---
         else {
             let loadedCount = 0;
             files.forEach((file, index) => {
@@ -290,13 +306,13 @@ if(slideUpload) {
                 reader.onload = (event) => {
                     const slideDiv = document.createElement('div');
                     slideDiv.className = `slide absolute inset-0 w-full h-full flex flex-col items-center justify-center bg-transparent ${index === 0 ? 'active-slide' : ''}`;
-                    slideDiv.innerHTML = `<img src="${event.target.result}" />`;
+                    slideDiv.innerHTML = `<img src="${event.target.result}" style="width: 100%; height: 100%; object-fit: contain; padding: 2rem;" />`;
                     slideContainer.appendChild(slideDiv); 
                     
                     loadedCount++;
                     if (loadedCount === files.length) finishLoading();
                 };
-                reader.readAsDataURL(file);
+                reader.readAsDataURL(file); // Images use DataURL
             });
         }
     });
