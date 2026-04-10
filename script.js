@@ -1,5 +1,5 @@
 // =======================================================================
-// ASTRAL PRESENT - Core Logic Engine (Dashboard Edition)
+// ASTRAL PRESENT - Core Logic Engine (Dashboard + PDF Edition)
 // =======================================================================
 
 // --- DOM Elements ---
@@ -75,7 +75,6 @@ function initSettings() {
     updateInstructionsUI();
 }
 
-// Updates the 3 Bento boxes at the bottom
 function updateInstructionsUI() {
     if(!instructionList) return;
     instructionList.innerHTML = `
@@ -157,12 +156,10 @@ const executeAction = {
     'none': () => {}
 };
 
-// Modifies the Dashboard "Active Gesture" floating panel
 function showFeedback(text, iconName) {
     if(activeGestureText) activeGestureText.innerText = text;
     if(activeGestureIcon) activeGestureIcon.innerText = iconName;
     
-    // Quick pulse animation on the box
     if(feedbackWidget && typeof gsap !== 'undefined') {
         gsap.fromTo(feedbackWidget, 
             { scale: 1.05, borderColor: "rgba(0,240,255,0.8)" }, 
@@ -171,7 +168,7 @@ function showFeedback(text, iconName) {
     }
 }
 
-// Function for the on-screen physical buttons
+// Function for on-screen physical buttons
 window.triggerManualAction = function(actionKey) {
     if (actionKey === 'none') return;
     if (isSystemPaused && actionKey !== 'togglePause') return; 
@@ -190,7 +187,6 @@ window.triggerManualAction = function(actionKey) {
 function triggerGesture(physicalGestureName) {
     const actionKey = userConfig[physicalGestureName];
     if (actionKey === 'none') return; 
-
     if (isSystemPaused && actionKey !== 'togglePause') return; 
 
     isCooldown = true; 
@@ -205,10 +201,24 @@ function triggerGesture(physicalGestureName) {
     setTimeout(() => { isCooldown = false; showFeedback("Standby", "waving_hand"); }, COOLDOWN_TIME);
 }
 
+function triggerVoice(actionKey) {
+    if (actionKey === 'none') return;
+    executeAction[actionKey]();
+    const actionData = availableActions[actionKey];
+    showFeedback("Voice: " + actionData.text, "mic");
+    speak(actionData.label);
+    
+    isCooldown = true;
+    setTimeout(() => { isCooldown = false; showFeedback("Standby", "waving_hand"); }, COOLDOWN_TIME);
+}
+
 // --- Voice Recognition ---
 function initVoiceCommands() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
+    if (!SpeechRecognition) {
+        console.warn("Web Speech API not supported. Use Chrome.");
+        return;
+    }
 
     let recognition = new SpeechRecognition();
     recognition.continuous = true;
@@ -218,41 +228,86 @@ function initVoiceCommands() {
 
     recognition.onresult = (event) => {
         const command = event.results[event.results.length - 1][0].transcript.toLowerCase();
-        if ((command.includes('next') || command.includes('forward')) && !isCooldown && !isSystemPaused) triggerGesture('thumbUp'); 
-        else if ((command.includes('previous') || command.includes('back')) && !isCooldown && !isSystemPaused) triggerGesture('closedFist');
-        else if ((command.includes('pause') || command.includes('resume')) && !isCooldown) triggerGesture('openPalm');
+        if ((command.includes('next') || command.includes('forward')) && !isCooldown && !isSystemPaused) triggerVoice('nextSlide'); 
+        else if ((command.includes('previous') || command.includes('back')) && !isCooldown && !isSystemPaused) triggerVoice('prevSlide');
+        else if ((command.includes('pause') || command.includes('resume')) && !isCooldown) triggerVoice('togglePause');
+    };
+
+    recognition.onerror = (event) => {
+        if (event.error === 'not-allowed') {
+            showFeedback("Mic Denied", "mic_off");
+            if(voiceIndicator) voiceIndicator.classList.add('hidden');
+        }
     };
     
     recognition.onend = () => { try { recognition.start(); } catch(e){} }; 
     try { recognition.start(); } catch(e) {}
 }
 
-// --- File Upload Logic ---
+
+// --- 📄 DYNAMIC PDF & IMAGE UPLOAD LOGIC ---
 if(slideUpload) {
-    slideUpload.addEventListener('change', (e) => {
+    slideUpload.addEventListener('change', async (e) => {
         const files = Array.from(e.target.files);
         if(files.length === 0) return;
         
         document.querySelectorAll('.slide').forEach(s => s.remove());
-        
-        files.forEach((file, index) => {
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                const slideDiv = document.createElement('div');
-                slideDiv.className = `slide absolute inset-0 w-full h-full flex flex-col items-center justify-center bg-transparent ${index === 0 ? 'active-slide' : ''}`;
-                slideDiv.innerHTML = `<img src="${event.target.result}" />`;
-                slideContainer.appendChild(slideDiv); 
+        showFeedback("Processing...", "sync");
+        speak("Processing file.");
+
+        // Handing PDF Files
+        if (files[0].type === 'application/pdf') {
+            const fileReader = new FileReader();
+            fileReader.onload = async function(event) {
+                const typedarray = new Uint8Array(event.target.result);
+                const pdf = await pdfjsLib.getDocument(typedarray).promise;
                 
-                if (index === files.length - 1) {
-                    slides = document.querySelectorAll('.slide');
-                    currentSlide = 0; updateSlideUI();
-                    showFeedback("Slides Loaded", "check_circle");
-                    speak("Ready.");
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const viewport = page.getViewport({ scale: 2.0 }); // High res scaling
+                    
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    
+                    await page.render({ canvasContext: context, viewport: viewport }).promise;
+                    
+                    const slideDiv = document.createElement('div');
+                    slideDiv.className = `slide absolute inset-0 w-full h-full flex flex-col items-center justify-center bg-transparent ${i === 1 ? 'active-slide' : ''}`;
+                    slideDiv.innerHTML = `<img src="${canvas.toDataURL('image/jpeg', 0.8)}" />`;
+                    slideContainer.appendChild(slideDiv);
                 }
+                finishLoading();
             };
-            reader.readAsDataURL(file);
-        });
+            fileReader.readAsArrayBuffer(files[0]);
+        } 
+        // Handling Image Files
+        else {
+            let loadedCount = 0;
+            files.forEach((file, index) => {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const slideDiv = document.createElement('div');
+                    slideDiv.className = `slide absolute inset-0 w-full h-full flex flex-col items-center justify-center bg-transparent ${index === 0 ? 'active-slide' : ''}`;
+                    slideDiv.innerHTML = `<img src="${event.target.result}" />`;
+                    slideContainer.appendChild(slideDiv); 
+                    
+                    loadedCount++;
+                    if (loadedCount === files.length) finishLoading();
+                };
+                reader.readAsDataURL(file);
+            });
+        }
     });
+}
+
+function finishLoading() {
+    slides = document.querySelectorAll('.slide');
+    currentSlide = 0; 
+    updateSlideUI();
+    showFeedback("Slides Ready", "check_circle");
+    speak("Presentation Ready.");
 }
 
 function updateSlideUI() {
@@ -287,7 +342,6 @@ if(document.getElementById('fullscreen-btn')) {
 let activeStream = null;
 let isProcessingFrame = false; 
 
-// FPS Calculation Variables
 let lastFrameTime = performance.now();
 let frameCount = 0;
 
@@ -329,7 +383,6 @@ async function startCustomCamera(deviceId = null) {
 async function processVideoFrame() {
     if (videoElement.readyState >= 2 && !isProcessingFrame) {
         
-        // Calculate FPS for Telemetry panel
         const now = performance.now();
         frameCount++;
         if (now - lastFrameTime >= 1000) {
@@ -412,7 +465,6 @@ hands.onResults((results) => {
             } 
         }
     } else {
-        // Reset Confidence UI if no hand
         if(confidenceText) confidenceText.innerText = `0%`;
         if(confidenceBar) confidenceBar.style.width = `0%`;
     }
